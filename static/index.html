@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>AI Network IDS Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      display: flex;
+      height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      background: #0b1220;
+      color: #e5e7eb;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 220px;
+      background: #111827;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar h2 {
+      font-size: 18px;
+      margin-bottom: 30px;
+    }
+
+    .sidebar .status {
+      font-size: 14px;
+      margin-bottom: 10px;
+      color: #9ca3af;
+    }
+
+    /* Main content */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top bar */
+    .topbar {
+      padding: 15px 25px;
+      background: #111827;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    /* Content area */
+    .content {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow: hidden;
+    }
+
+    /* Metric cards */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+    }
+
+    .card {
+      background: #1f2937;
+      padding: 15px;
+      border-radius: 10px;
+    }
+
+    .card h4 {
+      font-size: 14px;
+      color: #9ca3af;
+    }
+
+    .card .value {
+      font-size: 22px;
+      margin-top: 5px;
+      font-weight: bold;
+    }
+
+    /* Chart */
+    .chart-container {
+      background: #1f2937;
+      padding: 15px;
+      border-radius: 10px;
+      height: 250px;
+    }
+
+    /* Alerts */
+    .alerts {
+      background: #1f2937;
+      border-radius: 10px;
+      padding: 15px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .alerts table {
+      width: 100%;
+      font-size: 13px;
+      border-collapse: collapse;
+    }
+
+    .alerts th {
+      text-align: left;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #374151;
+    }
+
+    .alerts td {
+      padding: 6px 0;
+    }
+
+    .alerts tbody {
+      display: block;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .alerts thead,
+    .alerts tbody tr {
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+    }
+
+    .LOW {
+      color: #94a3b8;
+    }
+
+    .MEDIUM {
+      color: #f59e0b;
+    }
+
+    .HIGH {
+      color: #ef4444;
+    }
+
+    @media (max-width: 900px) {
+      .sidebar {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="sidebar">
+    <h2>AI NIDS</h2>
+    <div class="status">Real-Time Monitoring</div>
+    <div class="status">ML Engine Active</div>
+  </div>
+
+  <div class="main">
+
+    <div class="topbar">
+      Network Intrusion Detection Dashboard
+    </div>
+
+    <div class="content">
+
+      <div class="metrics">
+        <div class="card">
+          <h4>Total Packets</h4>
+          <div id="packet-count" class="value">0</div>
+        </div>
+        <div class="card">
+          <h4>Active Flows</h4>
+          <div id="flow-count" class="value">0</div>
+        </div>
+        <div class="card">
+          <h4>Total Alerts</h4>
+          <div id="alert-count" class="value">0</div>
+        </div>
+        <div class="card">
+          <h4>ML Trained</h4>
+          <div id="ml-status" class="value">false</div>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <canvas id="flowChart"></canvas>
+      </div>
+
+      <div class="alerts">
+        <h4 style="margin-bottom:10px;">Recent Alerts</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Source</th>
+              <th>Destination</th>
+              <th>Severity</th>
+            </tr>
+          </thead>
+          <tbody id="alerts-body"></tbody>
+        </table>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    const alertsBody = document.getElementById("alerts-body");
+    let totalAlerts = 0;
+
+    const ws = new WebSocket("ws://" + location.host + "/ws/alerts");
+
+    ws.onmessage = function (event) {
+      const data = JSON.parse(event.data);
+
+      totalAlerts++;
+      document.getElementById("alert-count").textContent = totalAlerts;
+
+      const row = document.createElement("tr");
+      row.innerHTML = `
+            <td>${data.type}</td>
+            <td>${data.src_ip}</td>
+            <td>${data.dst_ip}</td>
+            <td class="${data.severity}">${data.severity}</td>
+        `;
+
+      alertsBody.prepend(row);
+
+      if (alertsBody.rows.length > 50) {
+        alertsBody.deleteRow(50);
+      }
+    };
+
+    const ctx = document.getElementById("flowChart").getContext("2d");
+
+    const chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          { label: "Packets", data: [], borderColor: "#06b6d4", tension: 0.3 },
+          { label: "Flows", data: [], borderColor: "#f59e0b", tension: 0.3 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { labels: { color: "#e5e7eb" } } },
+        scales: {
+          x: { ticks: { color: "#9ca3af" } },
+          y: { ticks: { color: "#9ca3af" } }
+        }
+      }
+    });
+
+    async function updateStats() {
+      const stats = await fetch("/stats").then(r => r.json());
+      const model = await fetch("/model/status").then(r => r.json());
+
+      document.getElementById("packet-count").textContent = stats.packet_count;
+      document.getElementById("flow-count").textContent = stats.active_flows;
+      document.getElementById("ml-status").textContent = model.is_trained;
+
+      const time = new Date().toLocaleTimeString();
+
+      chart.data.labels.push(time);
+      chart.data.datasets[0].data.push(stats.packet_count);
+      chart.data.datasets[1].data.push(stats.active_flows);
+
+      if (chart.data.labels.length > 20) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+        chart.data.datasets[1].data.shift();
+      }
+
+      chart.update();
+    }
+
+    setInterval(updateStats, 3000);
+  </script>
+
+</body>
+
+</html>
